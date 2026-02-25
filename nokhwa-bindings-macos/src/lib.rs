@@ -976,20 +976,16 @@ mod internal {
                 msg_send![self.inner, formats]
             })?;
             let format_description_sel = sel!(formatDescription);
-
             let mut selected_format: *mut Object = std::ptr::null_mut();
             let mut selected_range: *mut Object = std::ptr::null_mut();
-
-            for format in format_list {
+            'outer: for format in format_list {
                 let format_desc_ref: CMFormatDescriptionRef =
                     unsafe { msg_send![format.internal, performSelector: format_description_sel] };
                 let dimensions = unsafe { CMVideoFormatDescriptionGetDimensions(format_desc_ref) };
-
                 if dimensions.height == descriptor.resolution().height() as i32
                     && dimensions.width == descriptor.resolution().width() as i32
                 {
                     selected_format = format.internal;
-
                     for range in ns_arr_to_vec::<AVFrameRateRange>(unsafe {
                         msg_send![format.internal, videoSupportedFrameRateRanges]
                     }) {
@@ -997,7 +993,7 @@ mod internal {
                         // Older Apple cameras (i.e. iMac 2013) return 29.97000002997 as FPS.
                         if (f64::from(descriptor.frame_rate()) - max_fps).abs() < 0.999 {
                             selected_range = range.inner;
-                            break;
+                            break 'outer;
                         }
                     }
                 }
@@ -1009,20 +1005,16 @@ mod internal {
                     error: "Not Found/Rejected/Unsupported".to_string(),
                 });
             }
-
             let activefmtkey = str_to_nsstr("activeFormat");
             let min_frame_duration = str_to_nsstr("minFrameDuration");
-            let active_video_min_frame_duration = str_to_nsstr("activeVideoMinFrameDuration");
-            let active_video_max_frame_duration = str_to_nsstr("activeVideoMaxFrameDuration");
             let _: () =
                 unsafe { msg_send![self.inner, setValue:selected_format forKey:activefmtkey] };
-            let min_frame_duration: *mut Object =
-                unsafe { msg_send![selected_range, valueForKey: min_frame_duration] };
+            let min_frame_duration: CMTime = unsafe { msg_send![selected_range, minFrameDuration] };
             let _: () = unsafe {
-                msg_send![self.inner, setValue:min_frame_duration forKey:active_video_min_frame_duration]
+                msg_send![self.inner, setActiveVideoMinFrameDuration: min_frame_duration]
             };
             let _: () = unsafe {
-                msg_send![self.inner, setValue:min_frame_duration forKey:active_video_max_frame_duration]
+                msg_send![self.inner, setActiveVideoMaxFrameDuration: min_frame_duration]
             };
             self.unlock();
             Ok(())
